@@ -5,7 +5,7 @@
 iarduino_I2C_connect I2C2;
 
 byte REG_Array[11];
-//REG_Array[0] = 0; // 0 STOP 1 SET 2 START
+//REG_Array[0] = 1; // 0 STOP 1 SET 2 START
 //REG_Array[1] = 0; // 0-Bi   1-L   2-R
 //REG_Array[2] = 0; // PowerSet >> 8
 //REG_Array[3] = 0; // PowerSet
@@ -34,15 +34,61 @@ double Gist = 0.02;
 #define LEFT 1
 #define RIGHT 2
 
-//++++++++++++++++++++++++++++++++++++++++++++
+//++++++++++++++++++++++++++
+const double ADCSamples = 1024;   //1024 samples
+const double maxADCVolt = 5.0;    //5 Volts
+const double ZeroCorrection = 2.5;  //Calibration coefficient
+const double mVperAmp = 0.100;//0.185;
+
+int CalcAmp(unsigned int Vm) {
+  float I_calc = Vm * maxADCVolt / ADCSamples - ZeroCorrection + 0.007;
+  I_calc = I_calc / mVperAmp;
+  if (I_calc < 0) I_calc = 0;
+  int I = (int)(I_calc * 1000);
+  return I;
+}
+
+////Расчёт максимального тока
+//unsigned int  IMaxEr_AMP = 30;
+//
+//unsigned int set_IMaxEr() {
+//  unsigned int IMaxEr = (IMaxEr_AMP * mVperAmp + ZeroCorrection) * ADCSamples / maxADCVolt;
+//  return IMaxEr;
+//  }
+
+//++++++++++++++++++++++++++
+
+void Serial_Log() {
+  printValue("k", (String) k, "");
+  printValue("U", (String) Uamp, "V");
+  printValue("Iamp", (String) Iamp, "mA");
+  printValue("DUTY", (String) (Duty * 100), "%");
+  printValue("Error", (String) REG_Array[8], "");
+  printValue("PowerNow", (String) PowerNow, "W");
+  Serial.println();
+}
+
+void printValue(String name, String value, String unit) {
+  Serial.print(name);
+  Serial.print(" - ");
+  Serial.print(value);
+  Serial.print(unit);
+  Serial.print('\t');
+}
+
+//+++++++++++++++++++++++
+
 #include <avr/io.h>
 #include <avr/interrupt.h>
 
-ISR(TIMER1_OVF_vect) {
-  delayMicroseconds(10);   
+ISR(TIMER1_OVF_vect) {  
+  delayMicroseconds(10);   //10
   Um = analogRead(A0);  
+  //Serial.println(Um);
   if (k < 9) k++;
   else k = 0;
+  delayMicroseconds(53);//53
+  TCNT2  = 0;
 }
 
 void short_circuit() {
@@ -52,7 +98,7 @@ void short_circuit() {
   REG_Array[0] = 0;
 }
 
-void timer1_OUT(byte b){
+void timer1_OUT(byte b){//Выбор полярности, 0 - биполярный, 1,2 - полярность
   switch (b) {
     case 0:{
       TCCR1A |= ((1 << COM1A1) | (1 << COM1B1));
@@ -75,8 +121,8 @@ void timer_1_set() {      // инициализация Timer1
   cli();  // отключить глобальные прерывания
   TCCR1A = 0;   // установить регистры в 0
   TCCR1B = 0;
-  ICR1 = 780; //Соответствует 20Гц
-  OCR1A = 390;
+  ICR1 = 779;//780; //Соответствует 20Гц
+  OCR1A = 389;//390
   //OCR1B = 80;
   // set none-inverting mode
   //TCCR1A |= ((1 << COM1A1) | (1 << COM1B1));
@@ -93,6 +139,7 @@ void timer_1_set() {      // инициализация Timer1
   //TIMSK1 |= (1 << 5);  // включить прерывание по совпадению таймера
   sei(); // включить глобальные прерывания
   DDRB |= (1 << DDB1);
+  TCNT1  = 0; // initialize counter value to 0
 
 //  // TIMER 1 for interrupt frequency 20 Hz:
 //cli(); // stop interrupts
@@ -120,6 +167,7 @@ void timer_2_set() {      // инициализация Timer1
   OCR2A = 200;
   OCR2B = 0;
   sei();
+  TCNT2  = 0;
 
 //TCCR2A = 0; // set entire TCCR2A register to 0
 //TCCR2B = 0; // same for TCCR2B
@@ -145,80 +193,34 @@ void Err_short_circuit() {
   return;
 }
 
-//++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-void printValue(String name, String value, String unit) {
-  Serial.print(name);
-  Serial.print(" - ");
-  Serial.print(value);
-  Serial.print(unit);
-  Serial.print('\t');
-}
-
-void Serial_Log() {
-//  Serial.print("  k - "); Serial.print(k);
-//  Serial.print("  U "); Serial.print(Uamp);
-//  Serial.print("V  Iamp "); Serial.print(Iamp);
-//  Serial.print("mA  DUTY "); Serial.print(Duty * 100);
-//  Serial.print("%  Error "); Serial.print(REG_Array[8]); Serial.print(" ");
-//  Serial.print("  PowerSet "); Serial.print(PowerSet);
-//  Serial.print("  PowerNow "); Serial.println(PowerNow);
-
-  printValue("k", (String) k, "");
-  printValue("U", (String) Uamp, "V");
-  printValue("Iamp", (String) Iamp, "mA");
-  printValue("DUTY", (String) (Duty * 100), "%");
-  printValue("Error", (String) REG_Array[8], "");
-  printValue("PowerNow", (String) PowerNow, "W");
-  Serial.println();
-}
-
-
-
-//+++++++++++++++++++++++++++++++++++++++++++++++++
-
-const double ADCSamples = 1024;   //1024 samples
-const double maxADCVolt = 5.0;    //5 Volts
-const double ZeroCorrection = 0;  //Calibration coefficient
-const double mVperAmp = 0.06;
-
-int CalcAmp(unsigned int Vm) {
-  float I_calc = Vm * maxADCVolt / ADCSamples - ZeroCorrection;
-  I_calc = I_calc / mVperAmp;
-  if (I_calc < 0) I_calc = 0;
-  int I = (int)(I_calc * 1000);
-  return I;
-}
-
-////Расчёт максимального тока
-//unsigned int  IMaxEr_AMP = 30;
-//
-//unsigned int set_IMaxEr() {
-//  unsigned int IMaxEr = (IMaxEr_AMP * mVperAmp + ZeroCorrection) * ADCSamples / maxADCVolt;
-//  return IMaxEr;
-//  }
-
-//++++++++++++++++++++++++++++++++++++++
-
-
-void PID() {
-  if ((PowerNow < (PowerSet - PowerSet * Gist)) && (OCR2B < 200)) {
-    OCR2B++;
-  }
-  if ((PowerNow > (PowerSet + PowerSet * Gist)) && (OCR2B > 0)) {
-    OCR2B--;
-  }
-}
-
-
+//++++++++++++++++++++++++++++
 
 
 void setup() {
+  DDRB &= ~(1 << DDB1);
+  DDRD &= ~(1 << DDD3);
   //Wire.setClock(400000);  // устанавливаем скорость передачи данных по шине I2C = 400кБит/с
-  Wire.begin(0x01);       // инициируем подключение к шине I2C в качестве ведомого (slave) устройства, с указанием своего адреса на шине.
+  Wire.begin(0x10);       // инициируем подключение к шине I2C в качестве ведомого (slave) устройства, с указанием своего адреса на шине.
   I2C2.begin(REG_Array);  // инициируем возможность чтения/записи данных по шине I2C, из/в указываемый массив
-  attachInterrupt(0, short_circuit, FALLING);
+  //attachInterrupt(0, short_circuit, FALLING);
   Serial.begin(115200);
-  Serial.println("Start program");
+  Serial.println("Start program 110522");
+  //REG_Array[9]=8;
+  //REG_Array[10]=9;
+  //REG_Array[0] = 1;
+ // REG_Array[1] = 0;
+  //REG_Array[3] = 100; 
+  //REG_Array[5] = 100;
+  // use only one of the following 3 lines
+ // GTCCR = (1<<TSM)|(1<<PSRASY)|(1<<PSRSYNC); // halt all timers
+  timer_1_set();
+  timer_2_set();
+  // set all timers to the same value
+  //TCNT0 = 0; // set timer0 to 0
+  //TCNT1H = 0; // set timer1 high byte to 0
+  //TCNT1L = 0; // set timer1 low byte to 0
+  //TCNT2 = 0; // set timer2 to 0
+ // GTCCR = 0; // release all timers
 }
 
 void loop() {
@@ -260,24 +262,25 @@ void loop() {
             case 0:
               { //BiPolar
                 Serial.println("BiPolar");
-                timer_1_set();
-                timer_2_set();
+                //timer_1_set();
+                //timer_2_set();
                 timer1_OUT(DUAL);
+                REG_Array[0] = 2;
                 break;
               }
             case 1:
               { //+Polar
                 Serial.println("+Polar");
-                timer_1_set();
-                timer_2_set();
+                //timer_1_set();
+                //timer_2_set();
                 timer1_OUT(RIGHT);
                 break;
               }
             case 2:
               { //-Polar
                 Serial.println("-Polar");
-                timer_1_set();
-                timer_2_set();
+                //timer_1_set();
+                //timer_2_set();
                 timer1_OUT(LEFT);
                 break;
               }
@@ -310,11 +313,18 @@ void loop() {
     REG_Array[10] = Duty1000;
 
     if (REG_Array[0] == 2) {
-      Serial_Log();
+      //Serial_Log();
 
       PID();
     }
   }
 }
 
-
+void PID() {
+  if ((PowerNow < (PowerSet - PowerSet * Gist)) && (OCR2B < 150)) {//200
+    OCR2B++;
+  }
+  if ((PowerNow > (PowerSet + PowerSet * Gist)) && (OCR2B > 0)) {
+    OCR2B--;
+  }
+}
