@@ -148,7 +148,7 @@ void setup() {
   I2C2.begin(REG_Array);  // инициируем возможность чтения/записи данных по шине I2C, из/в указываемый массив
   //attachInterrupt(0, short_circuit, FALLING);
   Serial.begin(115200);
-  Serial.println("Start program 110522");
+  Serial.println("Start program 300923");
   timer_1_set();
   timer_2_set();
 }
