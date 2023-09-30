@@ -1,6 +1,8 @@
 // Подключаем библиотеки:
 #include <Wire.h>                  // подключаем библиотеку для работы с шиной I2C
 #include <iarduino_I2C_connect.h>  // подключаем библиотеку для соединения arduino по шине I2C
+#include "loging.h"
+#include "calc.h"
 
 iarduino_I2C_connect I2C2;
 
@@ -16,8 +18,8 @@ byte REG_Array[11];
 //REG_Array[8] = 0; // Error
 //REG_Array[9] = 0; // Duty100  >> 8
 //REG_Array[10] = 0; // Duty100
-byte OldMode = 10;
 
+byte OldMode = 10;
 unsigned int PowerSet = 0;
 unsigned int PowerNow = 0;
 double Duty = 0;
@@ -35,48 +37,6 @@ double Gist = 0.02;
 #define RIGHT 2
 
 //++++++++++++++++++++++++++
-const double ADCSamples = 1024;   //1024 samples
-const double maxADCVolt = 5.0;    //5 Volts
-const double ZeroCorrection = 2.5;  //Calibration coefficient
-const double mVperAmp = 0.100;//0.185;
-
-int CalcAmp(unsigned int Vm) {
-  float I_calc = Vm * maxADCVolt / ADCSamples - ZeroCorrection + 0.007;
-  I_calc = I_calc / mVperAmp;
-  if (I_calc < 0) I_calc = 0;
-  int I = (int)(I_calc * 1000);
-  return I;
-}
-
-////Расчёт максимального тока
-//unsigned int  IMaxEr_AMP = 30;
-//
-//unsigned int set_IMaxEr() {
-//  unsigned int IMaxEr = (IMaxEr_AMP * mVperAmp + ZeroCorrection) * ADCSamples / maxADCVolt;
-//  return IMaxEr;
-//  }
-
-//++++++++++++++++++++++++++
-
-void Serial_Log() {
-  printValue("k", (String) k, "");
-  printValue("U", (String) Uamp, "V");
-  printValue("Iamp", (String) Iamp, "mA");
-  printValue("DUTY", (String) (Duty * 100), "%");
-  printValue("Error", (String) REG_Array[8], "");
-  printValue("PowerNow", (String) PowerNow, "W");
-  Serial.println();
-}
-
-void printValue(String name, String value, String unit) {
-  Serial.print(name);
-  Serial.print(" - ");
-  Serial.print(value);
-  Serial.print(unit);
-  Serial.print('\t');
-}
-
-//+++++++++++++++++++++++
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -140,21 +100,6 @@ void timer_1_set() {      // инициализация Timer1
   sei(); // включить глобальные прерывания
   DDRB |= (1 << DDB1);
   TCNT1  = 0; // initialize counter value to 0
-
-//  // TIMER 1 for interrupt frequency 20 Hz:
-//cli(); // stop interrupts
-//TCCR1A = 0; // set entire TCCR1A register to 0
-//TCCR1B = 0; // same for TCCR1B
-//TCNT1  = 0; // initialize counter value to 0
-//// set compare match register for 20 Hz increments
-//OCR1A = 12499; // = 16000000 / (64 * 20) - 1 (must be <65536)
-//// turn on CTC mode
-//TCCR1B |= (1 << WGM12);
-//// Set CS12, CS11 and CS10 bits for 64 prescaler
-//TCCR1B |= (0 << CS12) | (1 << CS11) | (1 << CS10);
-//// enable timer compare interrupt
-//TIMSK1 |= (1 << OCIE1A);
-//sei(); // allow interrupts
 }
 
 void timer_2_set() {      // инициализация Timer1
@@ -168,32 +113,31 @@ void timer_2_set() {      // инициализация Timer1
   OCR2B = 0;
   sei();
   TCNT2  = 0;
-
-//TCCR2A = 0; // set entire TCCR2A register to 0
-//TCCR2B = 0; // same for TCCR2B
-//TCNT2  = 0; // initialize counter value to 0
-//// set compare match register for 10000 Hz increments
-//OCR2A = 199; // = 16000000 / (8 * 10000) - 1 (must be <256)
-//// turn on CTC mode
-//TCCR2B |= (1 << WGM21);
-//// Set CS22, CS21 and CS20 bits for 8 prescaler
-//TCCR2B |= (0 << CS22) | (1 << CS21) | (0 << CS20);
-//// enable timer compare interrupt
-//TIMSK2 |= (1 << OCIE2A);
 }
 
 void Err_short_circuit() {
-  Serial.println("Аппаратная защита по току");
-  Serial.println("Таймаут 5 сек");
-  delay(5000);
-  REG_Array[8] = 0;
-  OCR2B = 0;
-  //DDRD |= (1 << DDD3);
-  Serial.println("Restart");
-  return;
+    Serial.println("Аппаратная защита по току");
+    Serial.println("Таймаут 5 сек");
+    delay(5000);
+    REG_Array[8] = 0;
+    OCR2B = 0;
+    //DDRD |= (1 << DDD3);
+    Serial.println("Restart");
+    return;
 }
 
 //++++++++++++++++++++++++++++
+
+void PID() {
+  if ((PowerNow < (PowerSet - PowerSet * Gist)) && (OCR2B < 150)) {//200
+    OCR2B++;
+  }
+  if ((PowerNow > (PowerSet + PowerSet * Gist)) && (OCR2B > 0)) {
+    OCR2B--;
+  }
+}
+
+//++++++++++++++++++++
 
 
 void setup() {
@@ -205,28 +149,14 @@ void setup() {
   //attachInterrupt(0, short_circuit, FALLING);
   Serial.begin(115200);
   Serial.println("Start program 110522");
-  //REG_Array[9]=8;
-  //REG_Array[10]=9;
-  //REG_Array[0] = 1;
- // REG_Array[1] = 0;
-  //REG_Array[3] = 100; 
-  //REG_Array[5] = 100;
-  // use only one of the following 3 lines
- // GTCCR = (1<<TSM)|(1<<PSRASY)|(1<<PSRSYNC); // halt all timers
   timer_1_set();
   timer_2_set();
-  // set all timers to the same value
-  //TCNT0 = 0; // set timer0 to 0
-  //TCNT1H = 0; // set timer1 high byte to 0
-  //TCNT1L = 0; // set timer1 low byte to 0
-  //TCNT2 = 0; // set timer2 to 0
- // GTCCR = 0; // release all timers
 }
 
 void loop() {
-  if (REG_Array[8] == 99) {  //Проверка на короткое замыкание
-    Err_short_circuit();
-  }
+    if (REG_Array[8] == 99) {  //Проверка на короткое замыкание
+      Err_short_circuit();
+    }
 
   //Отключить вывод если нет генерации
   // if (OCR2B == 0) {
@@ -313,18 +243,9 @@ void loop() {
     REG_Array[10] = Duty1000;
 
     if (REG_Array[0] == 2) {
-      //Serial_Log();
+      Serial_Log(k, Uamp, Iamp, Duty, REG_Array[8], PowerNow);
 
       PID();
     }
-  }
-}
-
-void PID() {
-  if ((PowerNow < (PowerSet - PowerSet * Gist)) && (OCR2B < 150)) {//200
-    OCR2B++;
-  }
-  if ((PowerNow > (PowerSet + PowerSet * Gist)) && (OCR2B > 0)) {
-    OCR2B--;
   }
 }
